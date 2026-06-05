@@ -1,8 +1,7 @@
 #!/bin/bash
 echo "Starting Jewel: AI-Powered Web Scraper..."
 
-# Railway sets $PORT environment variable automatically
-UI_PORT=${PORT:-4000}  # Use Railway's PORT or default to 4000
+UI_PORT=${PORT:-4000}  
 UI_HOST="0.0.0.0"
 
 # Check if we should run UI or main.py
