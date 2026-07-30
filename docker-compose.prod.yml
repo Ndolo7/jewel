@@ -1,0 +1,13 @@
+services:
+  app:
+    image: ghcr.io/ndolo7/robin:latest
+    restart: always
+    ports:
+      - "4000:4000"
+    env_file:
+      - .env
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
