@@ -1,5 +1,6 @@
 import re
 import openai
+import google.api_core.exceptions
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from llm_utils import _llm_config_map, _common_llm_params
@@ -10,7 +11,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 
-def get_llm(model_choice):
+def get_llm(model_choice, streaming=True, callbacks=None):
     model_choice_lower = model_choice.lower()
     # Look up the configuration in the map
     config = _llm_config_map.get(model_choice_lower)
@@ -29,7 +30,13 @@ def get_llm(model_choice):
 
     # Combine common parameters with model-specific parameters
     # Model-specific parameters will override common ones if there are any conflicts
-    all_params = {**_common_llm_params, **model_specific_params}
+    all_params = {
+        **_common_llm_params,
+        **model_specific_params,
+        "streaming": streaming,
+    }
+    if callbacks is not None:
+        all_params["callbacks"] = callbacks
 
     # Create the LLM instance using the gathered parameters
     llm_instance = llm_class(**all_params)
@@ -62,7 +69,7 @@ def filter_results(llm, query, results):
         return []
 
     system_prompt = """
-    You are a Web Search Results Filter. You are given a web search query and a list of search results in the form of index, link and title. 
+    You are a Web Search Results Filter. You are given a web search query and a list of search results in the form of index, link and title.
     Your task is to select the Top 20 most relevant results that best match the search query.
     Rule:
     1. Output ONLY at most top 20 indices (comma-separated list) that best match the input query
@@ -81,18 +88,39 @@ def filter_results(llm, query, results):
         result_indices = chain.invoke({"query": query, "results": final_str})
     except openai.RateLimitError as e:
         print(
-            f"Rate limit error: {e} \n Truncating to Web titles only with 30 characters"
+            f"Rate limit error: {e}. Truncating to Web titles only with 30 characters"
         )
         final_str = _generate_final_string(results, truncate=True)
         result_indices = chain.invoke({"query": query, "results": final_str})
+    except (ValueError, google.api_core.exceptions.GoogleAPIError) as e:
+        print(f"LLM result filtering failed: {e}. Using unfiltered search results.")
+        return results[:20]
 
-    # Select top_k results using original (non-truncated) results
-    top_results = [
-        results[i - 1]
-        for i in [int(item.strip()) for item in result_indices.split(",")]
-    ]
+    indices = []
+    for item in result_indices.split(","):
+        match = re.search(r"\d+", item)
+        if not match:
+            continue
+        index = int(match.group())
+        if 1 <= index <= len(results) and index not in indices:
+            indices.append(index)
 
-    return top_results
+    if not indices:
+        return results[:20]
+
+    selected = [results[i - 1] for i in indices[:20]]
+    minimum_results = min(5, len(results))
+    if len(selected) < minimum_results:
+        selected_links = {item.get("link") for item in selected}
+        for result in results:
+            if result.get("link") in selected_links:
+                continue
+            selected.append(result)
+            selected_links.add(result.get("link"))
+            if len(selected) >= minimum_results:
+                break
+
+    return selected[:20]
 
 
 def _generate_final_string(results, truncate=False):

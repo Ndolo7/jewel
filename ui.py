@@ -268,7 +268,7 @@ st.sidebar.subheader("Settings")
 model = st.sidebar.selectbox(
     "Choose an LLM model",
     [
-        # "gpt4o", "gpt-4.1", 
+        "gpt4o", "gpt-4.1", 
         # "claude-3-5-sonnet-latest", 
         # "llama3.1", 
         "gemini-2.5-flash",
@@ -349,7 +349,7 @@ if run_button and query:
     # Stage 1 - Load LLM
     with status_slot.container():
         with st.spinner("🔄 Loading LLM..."):
-            llm = get_llm(model)
+            llm = get_llm(model, streaming=False, callbacks=[])
 
     # Stage 2 - Refine query
     with status_slot.container():
@@ -388,6 +388,15 @@ if run_button and query:
             st.session_state.scraped = cached_scrape_multiple(
                 st.session_state.filtered, threads
             )
+
+    st.session_state.scraped = {
+        url: text
+        for url, text in st.session_state.scraped.items()
+        if text and "[Error:" not in text and "[Scraping Error:" not in text
+    }
+    if not st.session_state.scraped:
+        status_slot.error("No readable page content was found. Try a more specific query or run again.")
+        st.stop()
 
     # Stage 6 - Summarize
     # 6a) Prepare session state for streaming text
@@ -460,8 +469,8 @@ if run_button and query:
     with status_slot.container():
         with st.spinner("✍️ Generating summary..."):
             stream_handler = BufferedStreamingHandler(ui_callback=ui_emit)
-            llm.callbacks = [stream_handler]
-            _ = generate_summary(llm, query, st.session_state.scraped)
+            summary_llm = get_llm(model, streaming=True, callbacks=[stream_handler])
+            _ = generate_summary(summary_llm, query, st.session_state.scraped)
 
     with btn_col:
         now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
