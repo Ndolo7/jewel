@@ -1,6 +1,5 @@
 import re
 import openai
-import google.api_core.exceptions
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from llm_utils import _llm_config_map, _common_llm_params
@@ -92,7 +91,7 @@ def filter_results(llm, query, results):
         )
         final_str = _generate_final_string(results, truncate=True)
         result_indices = chain.invoke({"query": query, "results": final_str})
-    except (ValueError, google.api_core.exceptions.GoogleAPIError) as e:
+    except ValueError as e:
         print(f"LLM result filtering failed: {e}. Using unfiltered search results.")
         return results[:20]
 
